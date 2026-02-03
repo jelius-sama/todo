@@ -12,14 +12,17 @@ let package = Package(
         .watchOS(.v6),
     ],
     dependencies: [
-        .package(url: "https://github.com/PureSwift/Socket.git", from: "0.5.0")
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.0.0")
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .executableTarget(
             name: "todo",
-            dependencies: ["Socket"],
+            dependencies: [
+                .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+            ],
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ]

@@ -1,116 +1,145 @@
-import Foundation
-import Socket
+import NIO
+import NIOHTTP1
 
-private enum ServerConfig {
-    static let port: UInt16 = 6969
-    static let backlog: Int32 = 10
-    static let readBufferSize = 1024
+enum ServerConfig {
+    static let host = "0.0.0.0"
+    static let port = 6969
+    static let backlog = 256
+    static let maxMessagesPerRead = 16
 }
 
 @main
 struct Entry {
-    static func main() async throws {
-        let server = try await makeServer()
-        print("HTTP server listening on http://localhost:\(ServerConfig.port)")
+    static func main() {
+        let group = MultiThreadedEventLoopGroup(
+            numberOfThreads: System.coreCount
+        )
 
-        await acceptLoop(server: server)
-    }
-}
+        defer {
+            // SwiftNIO 2 requires blocking shutdown
+            try? group.syncShutdownGracefully()
+        }
 
-private func makeServer() async throws -> Socket {
-    let address = IPv4SocketAddress(address: .any, port: ServerConfig.port)
-    let server = try await Socket(IPv4Protocol.tcp, bind: address)
-    try await server.listen(backlog: Int(ServerConfig.backlog))
-    return server
-}
-
-private func acceptLoop(server: Socket) async {
-    while true {
         do {
-            let client = try await server.accept()
+            let bootstrap = makeBootstrap(group: group)
+            let channel = try bindServer(bootstrap: bootstrap)
 
-            Task {
-                await handleClient(client)
-            }
+            print("HTTP server listening on http://\(ServerConfig.host):\(ServerConfig.port)")
+
+            // Block the main thread until shutdown
+            try channel.closeFuture.wait()
+
         } catch {
-            // We cannot reliably pattern-match EAGAIN with this library.
-            // accept() is non-blocking, so transient failures are expected.
-
-            let message = String(describing: error)
-
-            // Log only if it *doesn't* look like EAGAIN
-            if !message.contains("temporarily unavailable") {
-                print("Accept error: \(error)")
-            }
-
-            // Yield to avoid busy-looping
-            try? await Task.sleep(nanoseconds: 1_000_000)  // 1ms
+            print("Fatal server error:", error)
+            exit(1)
         }
     }
 }
 
-private func handleClient(_ client: Socket) async {
-    let requestData = await readRequest(from: client)
-    _ = requestData  // retained for future analytics / routing
+func makeBootstrap(group: EventLoopGroup) -> ServerBootstrap {
+    ServerBootstrap(group: group)
+        // Server socket options
+        .serverChannelOption(
+            ChannelOptions.backlog,
+            value: Int32(ServerConfig.backlog)
+        )
+        .serverChannelOption(
+            ChannelOptions.socketOption(.so_reuseaddr),
+            value: 1
+        )
 
-    let responseData = makeHTTPResponse()
+        // Accepted connection initializer
+        .childChannelInitializer { channel in
+            channel.pipeline.configureHTTPServerPipeline().flatMap {
+                channel.pipeline.addHandler(HTTPHandler())
+            }
+        }
 
-    await writeResponse(responseData, to: client)
-    await client.close()
+        // Child socket options
+        .childChannelOption(
+            ChannelOptions.socketOption(.so_reuseaddr),
+            value: 1
+        )
+        .childChannelOption(
+            ChannelOptions.maxMessagesPerRead,
+            value: UInt(ServerConfig.maxMessagesPerRead)
+        )
 }
 
-private func readRequest(from client: Socket) async -> Data {
-    var buffer = Data()
+func bindServer(bootstrap: ServerBootstrap) throws -> Channel {
+    try bootstrap
+        .bind(host: ServerConfig.host, port: ServerConfig.port)
+        .wait()
+}
 
-    while true {
-        do {
-            let chunk = try await client.read(ServerConfig.readBufferSize)
+final class HTTPHandler: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = HTTPServerRequestPart
+    typealias OutboundOut = HTTPServerResponsePart
 
-            // Client closed connection
-            if chunk.isEmpty {
-                break
-            }
+    // Capture request data for analytics / routing later
+    private var requestBuffer: ByteBuffer?
 
-            buffer.append(chunk)
+    func channelRead(
+        context: ChannelHandlerContext,
+        data: NIOAny
+    ) {
+        let part = unwrapInboundIn(data)
 
-            // Stop once HTTP headers are complete
-            if let text = String(data: buffer, encoding: .utf8),
-                text.contains("\r\n\r\n")
-            {
-                break
-            }
-        } catch {
-            print("Read error: \(error)")
+        switch part {
+
+        case .head(let head):
+            _ = head
+            requestBuffer = context.channel.allocator.buffer(capacity: 0)
+
+        case .body(var body):
+            requestBuffer?.writeBuffer(&body)
+
+        case .end:
+            sendResponse(context: context)
+            requestBuffer = nil
         }
     }
 
-    return buffer
-}
+    private func sendResponse(context: ChannelHandlerContext) {
+        let body = "Hello from SwiftNIO 2 HTTP server!\n"
 
-private func writeResponse(_ data: Data, to client: Socket) async {
-    var written = 0
+        var headers = HTTPHeaders()
+        headers.add(name: "Content-Length", value: "\(body.utf8.count)")
+        headers.add(name: "Content-Type", value: "text/plain")
+        headers.add(name: "Connection", value: "close")
 
-    while written < data.count {
-        do {
-            let bytesWritten = try await client.write(data[written...])
-            written += bytesWritten
-        } catch {
-            print("Write error: \(error)")
-        }
+        let head = HTTPResponseHead(
+            version: .http1_1,
+            status: .ok,
+            headers: headers
+        )
+
+        context.write(
+            wrapOutboundOut(.head(head)),
+            promise: nil
+        )
+
+        var buffer = context.channel.allocator.buffer(
+            capacity: body.utf8.count
+        )
+        buffer.writeString(body)
+
+        context.write(
+            wrapOutboundOut(.body(.byteBuffer(buffer))),
+            promise: nil
+        )
+
+        context.writeAndFlush(
+            wrapOutboundOut(.end(nil)),
+            promise: nil
+        )
     }
-}
 
-private func makeHTTPResponse() -> Data {
-    let body = "Hello, World!\n"
-
-    let response = """
-        HTTP/1.1 200 OK\r
-        Content-Length: \(body.utf8.count)\r
-        Content-Type: text/plain\r
-        Connection: close\r
-        \r
-        \(body)
-        """
-
-    return response.data(using: .utf8)!
+    func errorCaught(
+        context: ChannelHandlerContext,
+        error: Error
+    ) {
+        print("Connection error:", error)
+        context.close(promise: nil)
+    }
 }
