@@ -1,16 +1,106 @@
 import NIO
-import NIOHTTP1
 
-enum ServerConfig {
-    static let host = "0.0.0.0"
-    static let port = 6969
-    static let backlog = 256
-    static let maxMessagesPerRead = 16
-}
+let VERSION = "0.0.0"
 
 @main
 struct Entry {
+    enum ClientTask: String, CaseIterable {
+        case add = "add"
+        case mark = "mark"
+        case delete = "delete"
+    }
+
     static func main() {
+        if CommandLine.arguments.count > 1 {
+            let arg: String = CommandLine.arguments[1]
+            switch arg {
+            case "--help", "-help", "--h", "-h":
+                printHelp()
+
+            case "--version", "-version", "--v", "-v":
+                printVersion()
+
+            case "server":
+                server()
+
+            case "add", "a":
+                client(task: .add)
+
+            case "mark", "m":
+                client(task: .mark)
+
+            case "delete", "d":
+                client(task: .delete)
+
+            case "sync", "s":
+                sync()
+
+            default:
+                printHelp()
+            }
+        } else {
+            printHelp()
+        }
+    }
+
+    static func printHelp() {
+        let reset = "\u{001B}[0m"
+        let bold = "\u{001B}[1m"
+        let dim = "\u{001B}[2m"
+
+        let blue = "\u{001B}[34m"
+        let green = "\u{001B}[32m"
+        let cyan = "\u{001B}[36m"
+        let _ = "\u{001B}[90m"  // gray-ish
+
+        print(
+            """
+            \(blue)\(bold)
+             ████████╗ ██████╗ ██████╗  ██████╗ 
+             ╚══██╔══╝██╔═══██╗██╔══██╗██╔═══██╗
+                ██║   ██║   ██║██║  ██║██║   ██║
+                ██║   ██║   ██║██║  ██║██║   ██║
+                ██║   ╚██████╔╝██████╔╝╚██████╔╝
+                ╚═╝    ╚═════╝ ╚═════╝  ╚═════╝ 
+            \(reset)
+
+            \(bold)Todo\(reset) — Manage your tasks from the terminal or browser, with syncing via an external server.
+
+            \(cyan)USAGE:\(reset)
+              \(CommandLine.arguments[0]) <command> [options]
+
+            \(cyan)COMMANDS:\(reset)
+              \(green)add\(reset), \(green)a\(reset)      Add a new task to your list
+              \(green)mark\(reset), \(green)m\(reset)     Mark a task as complete or incomplete
+              \(green)delete\(reset), \(green)d\(reset)   Remove a task forever
+              \(green)sync\(reset), \(green)s\(reset)     Sync tasks with the remote server
+              \(green)server\(reset)      Start the todo backend server
+
+            \(cyan)OPTIONS:\(reset)
+              --help, -h      Show this help message
+              --version, -v   Show current version
+
+            \(blue)Example:\(reset)
+              \(dim)\(bold)# Intelligent parsing\(reset)
+              todo add "Buy coffee beans"
+              todo add Buy coffee beans
+              todo add Buy\\ coffee\\ beans
+            """)
+    }
+
+    static func printVersion() {
+        print("\(CommandLine.arguments[0]) version \(VERSION)")
+    }
+
+    static func client(task: ClientTask) {
+        print("TODO: Implement todo client!")
+    }
+
+    static func sync() {
+        print("TODO: Implement remote syncing!")
+    }
+
+    static func server() {
         let group = MultiThreadedEventLoopGroup(
             numberOfThreads: System.coreCount
         )
@@ -33,113 +123,5 @@ struct Entry {
             print("Fatal server error:", error)
             exit(1)
         }
-    }
-}
-
-func makeBootstrap(group: EventLoopGroup) -> ServerBootstrap {
-    ServerBootstrap(group: group)
-        // Server socket options
-        .serverChannelOption(
-            ChannelOptions.backlog,
-            value: Int32(ServerConfig.backlog)
-        )
-        .serverChannelOption(
-            ChannelOptions.socketOption(.so_reuseaddr),
-            value: 1
-        )
-
-        // Accepted connection initializer
-        .childChannelInitializer { channel in
-            channel.pipeline.configureHTTPServerPipeline().flatMap {
-                channel.pipeline.addHandler(HTTPHandler())
-            }
-        }
-
-        // Child socket options
-        .childChannelOption(
-            ChannelOptions.socketOption(.so_reuseaddr),
-            value: 1
-        )
-        .childChannelOption(
-            ChannelOptions.maxMessagesPerRead,
-            value: UInt(ServerConfig.maxMessagesPerRead)
-        )
-}
-
-func bindServer(bootstrap: ServerBootstrap) throws -> Channel {
-    try bootstrap
-        .bind(host: ServerConfig.host, port: ServerConfig.port)
-        .wait()
-}
-
-final class HTTPHandler: ChannelInboundHandler, @unchecked Sendable {
-    typealias InboundIn = HTTPServerRequestPart
-    typealias OutboundOut = HTTPServerResponsePart
-
-    // Capture request data for analytics / routing later
-    private var requestBuffer: ByteBuffer?
-
-    func channelRead(
-        context: ChannelHandlerContext,
-        data: NIOAny
-    ) {
-        let part = unwrapInboundIn(data)
-
-        switch part {
-
-        case .head(let head):
-            _ = head
-            requestBuffer = context.channel.allocator.buffer(capacity: 0)
-
-        case .body(var body):
-            requestBuffer?.writeBuffer(&body)
-
-        case .end:
-            sendResponse(context: context)
-            requestBuffer = nil
-        }
-    }
-
-    private func sendResponse(context: ChannelHandlerContext) {
-        let body = "Hello from SwiftNIO 2 HTTP server!\n"
-
-        var headers = HTTPHeaders()
-        headers.add(name: "Content-Length", value: "\(body.utf8.count)")
-        headers.add(name: "Content-Type", value: "text/plain")
-        headers.add(name: "Connection", value: "close")
-
-        let head = HTTPResponseHead(
-            version: .http1_1,
-            status: .ok,
-            headers: headers
-        )
-
-        context.write(
-            wrapOutboundOut(.head(head)),
-            promise: nil
-        )
-
-        var buffer = context.channel.allocator.buffer(
-            capacity: body.utf8.count
-        )
-        buffer.writeString(body)
-
-        context.write(
-            wrapOutboundOut(.body(.byteBuffer(buffer))),
-            promise: nil
-        )
-
-        context.writeAndFlush(
-            wrapOutboundOut(.end(nil)),
-            promise: nil
-        )
-    }
-
-    func errorCaught(
-        context: ChannelHandlerContext,
-        error: Error
-    ) {
-        print("Connection error:", error)
-        context.close(promise: nil)
     }
 }

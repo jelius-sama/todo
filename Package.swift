@@ -3,6 +3,11 @@
 
 import PackageDescription
 
+let swiftSettings: [SwiftSetting] = [
+    .unsafeFlags(["-parse-as-library"]),
+    .unsafeFlags(["-static-stdlib"], .when(platforms: [.linux])),
+]
+
 let package = Package(
     name: "todo",
     platforms: [
@@ -23,9 +28,7 @@ let package = Package(
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
             ],
-            swiftSettings: [
-                .unsafeFlags(["-parse-as-library"])
-            ]
+            swiftSettings: swiftSettings
         )
     ]
 )
