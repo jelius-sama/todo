@@ -1,5 +1,11 @@
 import NIO
 
+#if os(macOS)
+    import Darwin
+#elseif os(Linux)
+    import Glibc
+#endif
+
 let VERSION = "0.0.0"
 
 @main
@@ -97,7 +103,34 @@ struct Entry {
     }
 
     static func sync() {
-        print("TODO: Implement remote syncing!")
+        #if os(macOS)
+            // macOS: fork via dlsym workaround
+            let RTLD_DEFAULT = UnsafeMutableRawPointer(bitPattern: -2)
+            guard let forkPtr = dlsym(RTLD_DEFAULT, "fork") else {
+                fatalError("Failed to resolve fork()")
+            }
+            typealias ForkType = @convention(c) () -> Int32
+            let fork = unsafeBitCast(forkPtr, to: ForkType.self)
+            let pid = fork()
+        #elseif os(Linux)
+            // Linux: just call fork normally
+            let pid = fork()
+        #else
+            fatalError("Unsupported platform")
+        #endif
+
+        if pid < 0 {
+            exit(1)
+        }
+
+        if pid > 0 {
+            exit(0)
+        }
+
+        setsid()
+
+        let status = syncLocalDatabase()
+        exit(status ? 0 : 1)
     }
 
     static func server() {

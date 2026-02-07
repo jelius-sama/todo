@@ -3,10 +3,18 @@
 
 import PackageDescription
 
-let swiftSettings: [SwiftSetting] = [
-    .unsafeFlags(["-parse-as-library"]),
-    .unsafeFlags(["-static-stdlib"], .when(platforms: [.linux])),
-]
+#if os(macOS)
+    let notifierLibrary = "Resources/terminal-notifier.app"
+    let swiftSettings: [SwiftSetting] = [
+        .unsafeFlags(["-parse-as-library"])
+    ]
+#elseif os(Linux)
+    let notifierLibrary = "Resources/notify-send"
+    let swiftSettings: [SwiftSetting] = [
+        .unsafeFlags(["-parse-as-library"]),
+        .unsafeFlags(["-static-stdlib"]),
+    ]
+#endif
 
 let package = Package(
     name: "todo",
@@ -28,7 +36,10 @@ let package = Package(
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
             ],
-            swiftSettings: swiftSettings
+            resources: [
+                .copy(notifierLibrary)
+            ],
+            swiftSettings: swiftSettings,
         )
     ]
 )
