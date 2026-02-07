@@ -2,7 +2,9 @@ import NIO
 
 #if os(macOS)
     import Darwin
-#elseif os(Linux)
+#elseif os(Linux) && canImport(Musl)
+    import Musl
+#else
     import Glibc
 #endif
 
