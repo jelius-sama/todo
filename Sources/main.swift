@@ -137,9 +137,9 @@ struct Entry {
             default:
                 printHelp(status: 1)
             }
+        } else {
+            printHelp(status: 1)
         }
-
-        printHelp(status: 1)
     }
 
     private static func printHelp(status: Int32) -> Never {

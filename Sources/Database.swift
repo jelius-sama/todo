@@ -1,25 +1,32 @@
 import Foundation
 import SQLite3
 
-final class TodoDatabase {
+final class TodoDatabase: @unchecked Sendable {
     let SQLITE_STATIC = unsafeBitCast(0, to: sqlite3_destructor_type.self)
     let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    // MARK: - Singleton
-
-    let shared = TodoDatabase()
-
-    // MARK: - Properties
-
-    private var db: OpaquePointer?
+    static let shared = TodoDatabase()
+    var db: OpaquePointer?
 
     private let dbPath: String = {
-        let dir = "/var/db"
-        let name = "todo.sqlite3"
-        return "\(dir)/\(name)"
-    }()
+        let fileManager = FileManager.default
 
-    // MARK: - Init / Deinit
+        // Resolve the current user's home directory (e.g., /home/user or /Users/user)
+        let homeURL = fileManager.homeDirectoryForCurrentUser
+
+        // Build the specific path: ~/.local/share/todo/
+        let dataFolder =
+            homeURL
+            .appendingPathComponent(".local")
+            .appendingPathComponent("share")
+            .appendingPathComponent("todo")
+
+        // Ensure the folder exists before returning the file path
+        try? fileManager.createDirectory(at: dataFolder, withIntermediateDirectories: true)
+
+        // Return the full string path to the database file
+        return dataFolder.appendingPathComponent("todo.sqlite").path
+    }()
 
     private init() {
         openDatabase()
@@ -29,8 +36,6 @@ final class TodoDatabase {
     deinit {
         sqlite3_close(db)
     }
-
-    // MARK: - Setup
 
     private func openDatabase() {
         if sqlite3_open(dbPath, &db) != SQLITE_OK {
@@ -73,8 +78,6 @@ final class TodoDatabase {
         execute(createTodoTag)
     }
 
-    // MARK: - Core Execute
-
     private func execute(_ sql: String) {
         var err: UnsafeMutablePointer<Int8>?
         if sqlite3_exec(db, sql, nil, nil, &err) != SQLITE_OK {
@@ -83,8 +86,6 @@ final class TodoDatabase {
             fatalError("SQLite error: \(message)")
         }
     }
-
-    // MARK: - CRUD: Todo
 
     func insert(todo: Todo) -> Int64 {
         let sql = """
