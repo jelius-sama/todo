@@ -4,7 +4,7 @@ import Foundation
 
 enum ServerConfig {
     static let host = "0.0.0.0"
-    static let port = 6969
+    static let port = 5000
     static let backlog = 256
     static let maxMessagesPerRead = 16
 }
