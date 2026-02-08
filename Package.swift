@@ -30,7 +30,11 @@ targets.append(
         dependencies: dependencies,
         path: "Sources",
         resources: [
-            .copy(notifierLibrary)
+            .copy(notifierLibrary),
+            .copy("Resources/Assets"),
+        ],
+        swiftSettings: [
+            .unsafeFlags(["-parse-as-library"])
         ],
     ),
 )

@@ -8,7 +8,7 @@ import NIO
     #error("Unsupported platform")
 #endif
 
-let VERSION = "0.0.0"
+let VERSION = "1.0.0"
 
 @main
 struct Entry {
@@ -25,7 +25,7 @@ struct Entry {
                 server()
 
             case "list", "l":
-                Client.ListTodo()
+                Client.ListTodos()
 
             case "sync", "s":
                 sync()
@@ -71,7 +71,7 @@ struct Entry {
                 }
 
                 if let title = title, let desc = desc {
-                    Client.AddTodo(title: title, desc: desc, priority: priority, tag: tag)
+                    Client.AddTodo(title: title, description: desc, priority: priority, tag: tag)
                 } else {
                     printHelp(status: 1)
                 }
@@ -82,7 +82,7 @@ struct Entry {
                     printHelp(status: 1)
                 }
 
-                var mark: Client.Completed? = nil
+                var mark: Client.CompletionStatus? = nil
                 var query: String? = nil
 
                 var fIndex = 2
@@ -118,7 +118,7 @@ struct Entry {
                 }
 
                 if let mark = mark, let query = query {
-                    Client.MarkTodo(query: query, completed: mark)
+                    Client.MarkTodo(query: query, status: mark)
                 } else {
                     printHelp(status: 1)
                 }
@@ -143,72 +143,63 @@ struct Entry {
     }
 
     private static func printHelp(status: Int32) -> Never {
-        let reset = "\u{001B}[0m"
-        let bold = "\u{001B}[1m"
-        let dim = "\u{001B}[2m"
-
-        let blue = "\u{001B}[34m"
-        let green = "\u{001B}[32m"
-        let cyan = "\u{001B}[36m"
-        let gray = "\u{001B}[90m"
-
         print(
             """
-            \(gray)\(bold)
+            \(Colors.gray)\(Colors.bold)
              ████████╗ ██████╗ ██████╗  ██████╗ 
              ╚══██╔══╝██╔═══██╗██╔══██╗██╔═══██╗
                 ██║   ██║   ██║██║  ██║██║   ██║
                 ██║   ██║   ██║██║  ██║██║   ██║
                 ██║   ╚██████╔╝██████╔╝╚██████╔╝
                 ╚═╝    ╚═════╝ ╚═════╝  ╚═════╝ 
-            \(reset)
-            \(bold)Todo\(reset) — Terminal-based task manager with remote syncing.
+            \(Colors.reset)
+            \(Colors.bold)Todo\(Colors.reset) — Terminal-based task manager with remote syncing.
 
-            \(cyan)USAGE:\(reset)
+            \(Colors.cyan)USAGE:\(Colors.reset)
               \(CommandLine.arguments[0]) <command> [args]
 
-            \(cyan)COMMANDS:\(reset)
-              \(green)add\(reset), \(green)a\(reset)      Add a task. \(dim)Requires -t and -d.\(reset)
-              \(green)mark\(reset), \(green)m\(reset)     Update status. \(dim)Requires -q and -c.\(reset)
-              \(green)delete\(reset), \(green)d\(reset)   Remove a task. \(dim)Requires -q.\(reset)
-              \(green)list\(reset), \(green)l\(reset)     List all TODOs.
-              \(green)sync\(reset), \(green)s\(reset)     Sync with remote server.
-              \(green)server\(reset)      Start the backend service.
+            \(Colors.cyan)COMMANDS:\(Colors.reset)
+              \(Colors.green)add\(Colors.reset), \(Colors.green)a\(Colors.reset)      Add a task. \(Colors.dim)Requires -t and -d.\(Colors.reset)
+              \(Colors.green)mark\(Colors.reset), \(Colors.green)m\(Colors.reset)     Update status. \(Colors.dim)Requires -q and -c.\(Colors.reset)
+              \(Colors.green)delete\(Colors.reset), \(Colors.green)d\(Colors.reset)   Remove a task. \(Colors.dim)Requires -q.\(Colors.reset)
+              \(Colors.green)list\(Colors.reset), \(Colors.green)l\(Colors.reset)     List all TODOs.
+              \(Colors.green)sync\(Colors.reset), \(Colors.green)s\(Colors.reset)     Sync with remote server.
+              \(Colors.green)server\(Colors.reset)      Start the backend service.
 
-            \(cyan)ARGUMENTS & FLAGS:\(reset)
-              \(dim)# Arguments for add command\(reset)
-              \(bold)-t\(reset), --t, -title, -title
-                    The name of the task \(dim)(Required)\(reset)
-              \(bold)-d\(reset), --d, -desc, --desc, -description, --description
-                    Task description \(dim)(Required)\(reset)
-              \(bold)-p\(reset), --p, -priority, --priority
-                    Integer priority level \(dim)(Optional, Value: [1-10])\(reset)
-              \(bold)-tag\(reset), --tag
-                    Custom category tag \(dim)(Optional)\(reset)
+            \(Colors.cyan)ARGUMENTS & FLAGS:\(Colors.reset)
+              \(Colors.dim)# Arguments for add command\(Colors.reset)
+              \(Colors.bold)-t\(Colors.reset), --t, -title, -title
+                    The name of the task \(Colors.dim)(Required)\(Colors.reset)
+              \(Colors.bold)-d\(Colors.reset), --d, -desc, --desc, -description, --description
+                    Task description \(Colors.dim)(Required)\(Colors.reset)
+              \(Colors.bold)-p\(Colors.reset), --p, -priority, --priority
+                    Integer priority level \(Colors.dim)(Optional, Value: [1-10])\(Colors.reset)
+              \(Colors.bold)-tag\(Colors.reset), --tag
+                    Custom category tag \(Colors.dim)(Optional)\(Colors.reset)
 
-              \(dim)# Arguments for mark command\(reset)
-              \(bold)-c\(reset), --c, -completed, --completed
-                    Value: \(green)yes\(reset) or \(green)no\(reset) \(dim)(Required)\(reset)
+              \(Colors.dim)# Arguments for mark command\(Colors.reset)
+              \(Colors.bold)-c\(Colors.reset), --c, -completed, --completed
+                    Value: \(Colors.green)yes\(Colors.reset) or \(Colors.green)no\(Colors.reset) \(Colors.dim)(Required)\(Colors.reset)
 
-              \(dim)# Arguments for mark and delete command\(reset)
-              \(bold)-q\(reset), --q, -query, --query
-                    Search query/Task title \(dim)(Required)\(reset)
+              \(Colors.dim)# Arguments for mark and delete command\(Colors.reset)
+              \(Colors.bold)-q\(Colors.reset), --q, -query, --query
+                    Search query/Task title \(Colors.dim)(Required)\(Colors.reset)
 
-            \(cyan)OPTIONS:\(reset)
+            \(Colors.cyan)OPTIONS:\(Colors.reset)
               -h, --h, -help, --help         Show this help message
               -v, --v, -version, --version   Show current version
 
-            \(blue)EXAMPLES:\(reset)
-              \(dim)# Add a task\(reset)
-              todo add -t \(green)"Buy Coffee"\(reset) -d \(green)"Get espresso roast"\(reset) -p 1
+            \(Colors.blue)EXAMPLES:\(Colors.reset)
+              \(Colors.dim)# Add a task\(Colors.reset)
+              todo add -t \(Colors.green)"Buy Coffee"\(Colors.reset) -d \(Colors.green)"Get espresso roast"\(Colors.reset) -p 1
 
-              \(dim)# Mark a task as done\(reset)
-              todo mark -q \(green)"Buy Coffee"\(reset) -c yes
+              \(Colors.dim)# Mark a task as done\(Colors.reset)
+              todo mark -q \(Colors.green)"Buy Coffee"\(Colors.reset) -c yes
 
-              \(dim)# Delete a task\(reset)
-              todo delete -q \(green)"Old Task"\(reset)
+              \(Colors.dim)# Delete a task\(Colors.reset)
+              todo delete -q \(Colors.green)"Old Task"\(Colors.reset)
 
-            \(dim)Note: Always wrap multi-word strings in "quotes" to ensure correct parsing.\(reset)
+            \(Colors.dim)Note: Always wrap multi-word strings in "quotes" to ensure correct parsing.\(Colors.reset)
             """)
 
         exit(status)
@@ -252,6 +243,8 @@ struct Entry {
     }
 
     private static func server() {
+        APIRouter.InitRouter()
+
         let group = MultiThreadedEventLoopGroup(
             numberOfThreads: System.coreCount
         )

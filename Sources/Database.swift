@@ -1,34 +1,17 @@
 import Foundation
 import SQLite3
 
+// Thread-safe singleton managing the SQLite database for TODO items
 final class TodoDatabase: @unchecked Sendable {
-    let SQLITE_STATIC = unsafeBitCast(0, to: sqlite3_destructor_type.self)
-    let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-
     static let shared = TodoDatabase()
-    var db: OpaquePointer?
+    private(set) var db: OpaquePointer?
+    private let dbPath: String
 
-    private let dbPath: String = {
-        let fileManager = FileManager.default
-
-        // Resolve the current user's home directory (e.g., /home/user or /Users/user)
-        let homeURL = fileManager.homeDirectoryForCurrentUser
-
-        // Build the specific path: ~/.local/share/todo/
-        let dataFolder =
-            homeURL
-            .appendingPathComponent(".local")
-            .appendingPathComponent("share")
-            .appendingPathComponent("todo")
-
-        // Ensure the folder exists before returning the file path
-        try? fileManager.createDirectory(at: dataFolder, withIntermediateDirectories: true)
-
-        // Return the full string path to the database file
-        return dataFolder.appendingPathComponent("todo.sqlite").path
-    }()
+    private let SQLITE_STATIC = unsafeBitCast(0, to: sqlite3_destructor_type.self)
+    private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     private init() {
+        self.dbPath = Self.resolveDatabasePath()
         openDatabase()
         createTables()
     }
@@ -37,8 +20,26 @@ final class TodoDatabase: @unchecked Sendable {
         sqlite3_close(db)
     }
 
+    private static func resolveDatabasePath() -> String {
+        let fileManager = FileManager.default
+        let homeURL = fileManager.homeDirectoryForCurrentUser
+
+        let dataFolder =
+            homeURL
+            .appendingPathComponent(".local")
+            .appendingPathComponent("share")
+            .appendingPathComponent("todo")
+
+        try? fileManager.createDirectory(
+            at: dataFolder,
+            withIntermediateDirectories: true
+        )
+
+        return dataFolder.appendingPathComponent("todo.sqlite").path
+    }
+
     private func openDatabase() {
-        if sqlite3_open(dbPath, &db) != SQLITE_OK {
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else {
             fatalError("Unable to open database at \(dbPath)")
         }
     }
@@ -79,10 +80,11 @@ final class TodoDatabase: @unchecked Sendable {
     }
 
     private func execute(_ sql: String) {
-        var err: UnsafeMutablePointer<Int8>?
-        if sqlite3_exec(db, sql, nil, nil, &err) != SQLITE_OK {
-            let message = String(cString: err!)
-            sqlite3_free(err)
+        var errorMessage: UnsafeMutablePointer<Int8>?
+
+        guard sqlite3_exec(db, sql, nil, nil, &errorMessage) == SQLITE_OK else {
+            let message = String(cString: errorMessage!)
+            sqlite3_free(errorMessage)
             fatalError("SQLite error: \(message)")
         }
     }
@@ -93,22 +95,24 @@ final class TodoDatabase: @unchecked Sendable {
             VALUES (?, ?, ?, ?, ?, ?);
             """
 
-        var stmt: OpaquePointer?
-        sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
 
-        sqlite3_bind_text(stmt, 1, todo.title, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(stmt, 2, todo.description, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int64(stmt, 3, todo.completed.sqliteInt)
-        sqlite3_bind_int(stmt, 4, Int32(todo.priority))
-        sqlite3_bind_int64(stmt, 5, todo.createdAt)
-        sqlite3_bind_int64(stmt, 6, todo.updatedAt)
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            fatalError("Failed to prepare insert statement")
+        }
 
-        guard sqlite3_step(stmt) == SQLITE_DONE else {
-            sqlite3_finalize(stmt)
+        sqlite3_bind_text(statement, 1, todo.title, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 2, todo.description, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int64(statement, 3, todo.completed.sqliteInt)
+        sqlite3_bind_int(statement, 4, Int32(todo.priority))
+        sqlite3_bind_int64(statement, 5, todo.createdAt)
+        sqlite3_bind_int64(statement, 6, todo.updatedAt)
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
             fatalError("Failed to insert todo")
         }
 
-        sqlite3_finalize(stmt)
         return sqlite3_last_insert_rowid(db)
     }
 
@@ -119,62 +123,259 @@ final class TodoDatabase: @unchecked Sendable {
             ORDER BY created_at DESC;
             """
 
-        var stmt: OpaquePointer?
-        sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            fatalError("Failed to prepare list statement")
+        }
 
         var todos: [Todo] = []
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let todo = Todo(
-                id: sqlite3_column_int64(stmt, 0),
-                title: String(cString: sqlite3_column_text(stmt, 1)),
-                description: sqlite3_column_text(stmt, 2).map { String(cString: $0) },
-                completed: Bool(sqliteInt: sqlite3_column_int64(stmt, 3)),
-                priority: Int(sqlite3_column_int(stmt, 4)),
-                createdAt: sqlite3_column_int64(stmt, 5),
-                updatedAt: sqlite3_column_int64(stmt, 6)
-            )
-            todos.append(todo)
+        while sqlite3_step(statement) == SQLITE_ROW {
+            todos.append(parseTodo(from: statement!))
         }
 
-        sqlite3_finalize(stmt)
         return todos
     }
 
-    func markTodo(id: Int64, completed: Bool) {
+    func search(query: String) -> [Todo] {
+        let sql = """
+            SELECT id, title, description, completed, priority, created_at, updated_at
+            FROM todo
+            WHERE title LIKE ? OR description LIKE ?
+            ORDER BY created_at DESC;
+            """
+
+        let pattern = "%\(query)%"
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            fatalError("Failed to prepare search statement")
+        }
+
+        sqlite3_bind_text(statement, 1, pattern, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 2, pattern, -1, SQLITE_TRANSIENT)
+
+        var todos: [Todo] = []
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            todos.append(parseTodo(from: statement!))
+        }
+
+        return todos
+    }
+
+    func update(id: Int64, completed: Bool) {
         let sql = """
             UPDATE todo
             SET completed = ?, updated_at = ?
             WHERE id = ?;
             """
 
-        var stmt: OpaquePointer?
-        sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
 
-        sqlite3_bind_int64(stmt, 1, completed.sqliteInt)
-        sqlite3_bind_int64(stmt, 2, Int64(Date().timeIntervalSince1970))
-        sqlite3_bind_int64(stmt, 3, id)
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            fatalError("Failed to prepare update statement")
+        }
 
-        guard sqlite3_step(stmt) == SQLITE_DONE else {
-            sqlite3_finalize(stmt)
+        sqlite3_bind_int64(statement, 1, completed.sqliteInt)
+        sqlite3_bind_int64(statement, 2, Int64(Date().timeIntervalSince1970))
+        sqlite3_bind_int64(statement, 3, id)
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
             fatalError("Failed to update todo")
         }
-
-        sqlite3_finalize(stmt)
     }
 
-    func deleteTodo(id: Int64) {
+    func delete(id: Int64) {
         let sql = "DELETE FROM todo WHERE id = ?;"
 
-        var stmt: OpaquePointer?
-        sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
-        sqlite3_bind_int64(stmt, 1, id)
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
 
-        guard sqlite3_step(stmt) == SQLITE_DONE else {
-            sqlite3_finalize(stmt)
-            fatalError("Failed to delete todo")
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            fatalError("Failed to prepare delete statement")
         }
 
-        sqlite3_finalize(stmt)
+        sqlite3_bind_int64(statement, 1, id)
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            fatalError("Failed to delete todo")
+        }
+    }
+
+    func findOrCreateTag(name: String) -> Int64 {
+        // Try to find existing tag
+        if let existingID = findTag(name: name) {
+            return existingID
+        }
+
+        // Create new tag
+        return createTag(name: name)
+    }
+
+    func attachTag(todoID: Int64, tagID: Int64) {
+        let sql = "INSERT OR IGNORE INTO todo_tag (todo_id, tag_id) VALUES (?, ?);"
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            fatalError("Failed to prepare attach tag statement")
+        }
+
+        sqlite3_bind_int64(statement, 1, todoID)
+        sqlite3_bind_int64(statement, 2, tagID)
+
+        sqlite3_step(statement)
+    }
+
+    private func findTag(name: String) -> Int64? {
+        let sql = "SELECT id FROM tag WHERE name = ?;"
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            return nil
+        }
+
+        sqlite3_bind_text(statement, 1, name, -1, SQLITE_TRANSIENT)
+
+        if sqlite3_step(statement) == SQLITE_ROW {
+            return sqlite3_column_int64(statement, 0)
+        }
+
+        return nil
+    }
+
+    private func createTag(name: String) -> Int64 {
+        let sql = "INSERT INTO tag (name) VALUES (?);"
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            fatalError("Failed to prepare create tag statement")
+        }
+
+        sqlite3_bind_text(statement, 1, name, -1, SQLITE_TRANSIENT)
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            fatalError("Failed to create tag")
+        }
+
+        return sqlite3_last_insert_rowid(db)
+    }
+
+    func getTag(forTodoId todoId: Int64) -> String? {
+        let sql = """
+            SELECT tg.name
+            FROM tag tg
+            JOIN todo_tag tt ON tt.tag_id = tg.id
+            WHERE tt.todo_id = ?
+            LIMIT 1;
+            """
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            return nil
+        }
+
+        sqlite3_bind_int64(statement, 1, todoId)
+
+        if sqlite3_step(statement) == SQLITE_ROW {
+            if let cString = sqlite3_column_text(statement, 0) {
+                return String(cString: cString)
+            }
+        }
+
+        return nil
+    }
+
+    func listTodos(forTagId tagId: Int64) -> [Todo] {
+        let sql = """
+            SELECT
+                t.id,
+                t.title,
+                t.description,
+                t.completed,
+                t.priority,
+                t.created_at,
+                t.updated_at
+            FROM todo t
+            JOIN todo_tag tt ON tt.todo_id = t.id
+            WHERE tt.tag_id = ?
+            ORDER BY t.updated_at DESC;
+            """
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            return []
+        }
+
+        sqlite3_bind_int64(statement, 1, tagId)
+
+        var todos: [Todo] = []
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let todo = Todo(
+                id: sqlite3_column_int64(statement, 0),
+                title: String(cString: sqlite3_column_text(statement, 1)),
+                description: sqlite3_column_text(statement, 2).map { String(cString: $0) },
+                completed: sqlite3_column_int(statement, 3) == 1,
+                priority: Int(sqlite3_column_int(statement, 4)),
+                createdAt: sqlite3_column_int64(statement, 5),
+                updatedAt: sqlite3_column_int64(statement, 6)
+            )
+
+            todos.append(todo)
+        }
+
+        return todos
+    }
+
+    func listAllTags() -> [Tag] {
+        let sql = "SELECT id, name FROM tag ORDER BY name;"
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            return []
+        }
+
+        var tags: [Tag] = []
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let id = sqlite3_column_int64(statement, 0)
+
+            if let cString = sqlite3_column_text(statement, 1) {
+                let name = String(cString: cString)
+                tags.append(Tag(id: id, name: name))
+            }
+        }
+
+        return tags
+    }
+
+    private func parseTodo(from statement: OpaquePointer) -> Todo {
+        return Todo(
+            id: sqlite3_column_int64(statement, 0),
+            title: String(cString: sqlite3_column_text(statement, 1)),
+            description: sqlite3_column_text(statement, 2).map { String(cString: $0) },
+            completed: Bool(sqliteInt: sqlite3_column_int64(statement, 3)),
+            priority: Int(sqlite3_column_int(statement, 4)),
+            createdAt: sqlite3_column_int64(statement, 5),
+            updatedAt: sqlite3_column_int64(statement, 6)
+        )
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-struct Todo: Identifiable, Equatable, Hashable {
+struct Todo: Identifiable, Equatable, Hashable, Codable {
     let id: Int64
 
     var title: String
@@ -11,7 +11,13 @@ struct Todo: Identifiable, Equatable, Hashable {
     var updatedAt: Int64
 }
 
-struct Tag: Identifiable, Equatable, Hashable {
+extension Todo {
+    var tag: String? {
+        TodoDatabase.shared.getTag(forTodoId: id)
+    }
+}
+
+struct Tag: Identifiable, Equatable, Hashable, Codable {
     let id: Int64
     let name: String
 }

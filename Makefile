@@ -3,7 +3,7 @@
 UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S),Linux)
-    BUILD_FLAGS := -Xswiftc -static-stdlib -Xswiftc -parse-as-library -Xlinker -s
+    BUILD_FLAGS := -Xswiftc -static-stdlib -Xlinker -s
 else ifeq ($(UNAME_S),Darwin)
     BUILD_FLAGS := -Xswiftc -parse-as-library
 endif

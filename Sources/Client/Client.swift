@@ -1,101 +1,106 @@
+// CLI client for managing TODO items
 struct Client {
-    public enum Completed: String, CaseIterable {
-        case yes = "yes"
-        case no = "no"
+    public enum CompletionStatus: String, CaseIterable {
+        case yes
+        case no
+
+        var isCompleted: Bool {
+            self == .yes
+        }
     }
+
+    private static let database: TodoDatabase = .shared
 
     static func AddTodo(
         title: String,
-        desc: String,
-        priority: Optional<Int>,
-        tag: Optional<String>
+        description: String,
+        priority: Int?,
+        tag: String?
     ) {
-        if let p = priority, !(1...10).contains(p) {
-            Helpers.exitWithError("priority must be between 1 and 10")
-        }
+        validatePriority(priority)
 
         let finalPriority = priority ?? 0
-        var tagName = tag
-
-        if tagName == nil {
-            let answer = Helpers.prompt("Add a tag? (y/N)").lowercased()
-            if answer == "y" || answer == "yes" {
-                let name = Helpers.prompt("Tag name:")
-                if !name.isEmpty {
-                    tagName = name
-                }
-            }
-        }
+        let tagName = tag ?? promptForTag()
 
         let todo = Todo(
             title: title,
-            description: desc.isEmpty ? nil : desc,
+            description: description.isEmpty ? nil : description,
             priority: finalPriority
         )
 
-        let todoID = TodoDatabase.shared.insert(todo: todo)
+        let todoID = database.insert(todo: todo)
 
         if let name = tagName {
-            let tagID = Helpers.getOrCreateTag(named: name)
-            Helpers.attachTag(todoID: todoID, tagID: tagID)
+            attachTagToTodo(todoID: todoID, tagName: name)
         }
 
-        print("✓ Added TODO #\(todoID): \(title)")
+        print("\(Colors.bold)\(Colors.green)✓ Added TODO #\(todoID): \(title)\(Colors.reset)")
     }
 
-    static func MarkTodo(query: String, completed: Completed) {
-        let matches = Helpers.searchTodos(query: query)
+    static func MarkTodo(query: String, status: CompletionStatus) {
+        let matches = ClientHelpers.searchTodos(query: query)
 
         guard !matches.isEmpty else {
-            Helpers.exitWithError("no TODOs found matching '\(query)'")
+            ClientHelpers.exitWithError("no TODOs found matching '\(query)'")
         }
 
-        for todo in matches {
-            print("[\(todo.id)] \(todo.title)")
-        }
+        let id = ClientHelpers.selectTodoID(from: matches, action: "mark")
 
-        let input = Helpers.prompt("Enter TODO ID to mark:")
-        guard let id = Int64(input) else {
-            Helpers.exitWithError("invalid ID")
-        }
+        database.update(id: id, completed: status.isCompleted)
 
-        let done = completed == .yes
-        TodoDatabase.shared.markTodo(id: id, completed: done)
-
-        print("✓ TODO #\(id) marked as \(done ? "completed" : "not completed")")
+        let statusText = status.isCompleted ? "completed" : "not completed"
+        print("\(Colors.bold)\(Colors.green)✓ TODO #\(id) marked as \(statusText)\(Colors.reset)")
     }
 
-    static func ListTodo() {
-        let todos = TodoDatabase.shared.listTodos()
+    static func ListTodos() {
+        let todos = database.listTodos()
 
         if todos.isEmpty {
-            print("No TODOs found.")
+            print("\(Colors.bold)\(Colors.red)No TODOs found.\(Colors.reset)")
             return
         }
 
-        for todo in todos {
-            let status = todo.completed ? "✓" : " "
-            print("[\(status)] \(todo.id): \(todo.title)")
-        }
+        ClientHelpers.prettyPrintTodos(todos: todos)
     }
 
     static func DeleteTodo(query: String) {
-        let matches = Helpers.searchTodos(query: query)
+        let matches = ClientHelpers.searchTodos(query: query)
 
         guard !matches.isEmpty else {
-            Helpers.exitWithError("no TODOs found matching '\(query)'")
+            ClientHelpers.exitWithError("no TODOs found matching '\(query)'")
         }
 
-        for todo in matches {
-            print("[\(todo.id)] \(todo.title)")
+        let id = ClientHelpers.selectTodoID(from: matches, action: "delete")
+
+        database.delete(id: id)
+
+        print("\(Colors.bold)\(Colors.green)✓ TODO #\(id) deleted\(Colors.reset)")
+    }
+
+    private static func validatePriority(_ priority: Int?) {
+        if let p = priority, !(1...10).contains(p) {
+            ClientHelpers.exitWithError("priority must be between 1 and 10")
+        }
+    }
+
+    private static func promptForTag() -> String? {
+        let answer = ClientHelpers.prompt(
+            "Would you like to add a tag? \(Colors.reset)\(Colors.dim)(y/N)"
+        ).lowercased()
+
+        guard answer == "y" || answer == "yes" else {
+            return nil
         }
 
-        let input = Helpers.prompt("Enter TODO ID to delete:")
-        guard let id = Int64(input) else {
-            Helpers.exitWithError("invalid ID")
-        }
+        let name = ClientHelpers.prompt(
+            "Enter tag name \(Colors.reset)\(Colors.dim)(will be created if does not already exist):"
+        )
 
-        TodoDatabase.shared.deleteTodo(id: id)
-        print("✓ TODO #\(id) deleted")
+        return name.isEmpty ? nil : name
+    }
+
+    private static func attachTagToTodo(todoID: Int64, tagName: String) {
+        let tagID = ClientHelpers.getOrCreateTag(named: tagName)
+        ClientHelpers.attachTag(todoID: todoID, tagID: tagID)
     }
 }
