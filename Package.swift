@@ -4,25 +4,12 @@
 import PackageDescription
 import Foundation
 
-let shouldBuildStatic = ProcessInfo.processInfo.environment["STATIC_BUILD"] == "1"
-
 var targets: Array<Target> = []
 
 #if os(macOS)
     let notifierLibrary = "Resources/terminal-notifier.app"
-    let swiftSettings: [SwiftSetting] = [
-        .unsafeFlags(["-parse-as-library"])
-    ]
 #elseif os(Linux)
     let notifierLibrary = "Resources/notify-send"
-    var swiftSettings: [SwiftSetting] = [
-        .unsafeFlags(["-parse-as-library"])
-    ]
-    if shouldBuildStatic {
-        swiftSettings.append(
-            .unsafeFlags(["-static-stdlib"]),
-        )
-    }
     targets = [
         .systemLibrary(
             name: "SQLite3"
@@ -44,7 +31,6 @@ targets.append(
         resources: [
             .copy(notifierLibrary)
         ],
-        swiftSettings: swiftSettings,
     ),
 )
 

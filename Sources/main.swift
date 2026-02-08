@@ -2,10 +2,10 @@ import NIO
 
 #if os(macOS)
     import Darwin
-#elseif os(Linux) && canImport(Musl)
-    import Musl
-#else
+#elseif os(Linux)
     import Glibc
+#else
+    #error("Unsupported platform")
 #endif
 
 let VERSION = "0.0.0"

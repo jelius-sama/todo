@@ -1,9 +1,9 @@
 #if os(macOS)
     import Darwin
-#elseif os(Linux) && canImport(Musl)
-    import Musl
-#else
+#elseif os(Linux)
     import Glibc
+#else
+    #error("Unsupported platform")
 #endif
 
 func syncLocalDatabase() -> Bool {
