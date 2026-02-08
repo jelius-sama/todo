@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 import SQLite3
 
 struct Helpers {
