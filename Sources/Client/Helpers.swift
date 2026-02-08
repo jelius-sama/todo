@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 
 // Utility functions for CLI interactions and todo operations
 struct ClientHelpers {
