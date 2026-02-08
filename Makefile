@@ -1,6 +1,13 @@
 .PHONY: run build
 
-BUILD_FLAGS := -Xswiftc -static-stdlib -Xswiftc -parse-as-library
+UNAME_S := $(shell uname -s)
+
+ifeq ($(UNAME_S),Linux)
+    BUILD_FLAGS := -Xswiftc -static-stdlib -Xswiftc -parse-as-library -Xlinker -s
+else ifeq ($(UNAME_S),Darwin)
+    BUILD_FLAGS := -Xswiftc -parse-as-library
+endif
+
 BUILD_PATH := $(shell swift build -c release $(BUILD_FLAGS) --show-bin-path)
 
 APP_NAME := todo
@@ -10,5 +17,5 @@ run:
 	swift run $(BUILD_FLAGS)
 
 build:
-	swift build -c release $(BUILD_FLAGS) -Xlinker -s
+	swift build -c release $(BUILD_FLAGS)
 	mkdir -p $(BIN_PATH) && cp $(BUILD_PATH)/$(APP_NAME) $(BIN_PATH)/

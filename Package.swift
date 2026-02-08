@@ -5,6 +5,10 @@ import PackageDescription
 import Foundation
 
 var targets: Array<Target> = []
+var dependencies: Array<Target.Dependency> = [
+    .product(name: "NIO", package: "swift-nio"),
+    .product(name: "NIOHTTP1", package: "swift-nio"),
+]
 
 #if os(macOS)
     let notifierLibrary = "Resources/terminal-notifier.app"
@@ -15,6 +19,7 @@ var targets: Array<Target> = []
             name: "SQLite3"
         )
     ]
+    dependencies.append("SQLite3")
 #endif
 
 targets.append(
@@ -22,11 +27,7 @@ targets.append(
     // Targets can depend on other targets in this package and products from dependencies.
     .executableTarget(
         name: "todo",
-        dependencies: [
-            "SQLite3",
-            .product(name: "NIO", package: "swift-nio"),
-            .product(name: "NIOHTTP1", package: "swift-nio"),
-        ],
+        dependencies: dependencies,
         path: "Sources",
         resources: [
             .copy(notifierLibrary)
