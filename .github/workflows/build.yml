@@ -32,7 +32,7 @@ jobs:
       # ---- Swift ----
       - name: Install Swift
         run: |
-          dnf install -y swiftlang make
+          dnf install -y sqlite-devel swiftlang make
 
       - name: Verify Swift toolchain
         run: |
