@@ -13,20 +13,26 @@ jobs:
 
     container:
       image: amazonlinux:2023
+      options: >
+        --entrypoint /bin/bash
+      env:
+        BASH_ENV: /etc/profile
 
     steps:
+      # ---- Bootstrap container ----
+      - name: Install base tools (tar, git)
+        run: |
+          dnf update -y
+          dnf install -y tar git
+
       # ---- Checkout ----
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---- System deps ----
-      - name: Install system dependencies
+      # ---- Swift ----
+      - name: Install Swift
         run: |
-          sudo dnf update -y
-          sudo dnf install -y \
-            swiftlang \
-            make \
-            git
+          dnf install -y swiftlang make
 
       - name: Verify Swift toolchain
         run: |
