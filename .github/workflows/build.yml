@@ -11,33 +11,27 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
 
+    container:
+      image: amazonlinux:2023
+
     steps:
       # ---- Checkout ----
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---- Swift ----
-      - name: Set up Swift
-        uses: swift-actions/setup-swift@v3
-        with:
-          skip-verify-signature: true
-
-      # ---- Linux deps ----
+      # ---- System deps ----
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang \
-            libicu-dev \
-            libssl-dev \
-            libcurl4-openssl-dev \
-            libxml2-dev \
-            libz-dev
+          sudo dnf update -y
+          sudo dnf install -y \
+            swiftlang \
+            make \
+            git
 
-      # ---- Sanity check ----
       - name: Verify Swift toolchain
         run: |
           swift --version
+          swiftc --version
 
       # ---- Build ----
       - name: Build
@@ -51,6 +45,5 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: todo-linux
+          name: todo-linux-amazonlinux2023
           path: bin/todo
-
