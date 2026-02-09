@@ -1,0 +1,56 @@
+name: Build and Test Compile
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      # ---- Checkout ----
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---- Swift ----
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v3
+        with:
+          skip-verify-signature: true
+
+      # ---- Linux deps ----
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            libicu-dev \
+            libssl-dev \
+            libcurl4-openssl-dev \
+            libxml2-dev \
+            libz-dev
+
+      # ---- Sanity check ----
+      - name: Verify Swift toolchain
+        run: |
+          swift --version
+
+      # ---- Build ----
+      - name: Build
+        run: make build
+
+      # ---- Verify output ----
+      - name: Verify binary exists
+        run: test -f bin/todo
+
+      # ---- Artifact ----
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: todo-linux
+          path: bin/todo
+
