@@ -5,7 +5,7 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
     BUILD_FLAGS := -Xswiftc -static-stdlib -Xlinker -s
 else ifeq ($(UNAME_S),Darwin)
-    BUILD_FLAGS := -Xswiftc -parse-as-library
+    BUILD_FLAGS := 
 endif
 
 BUILD_PATH := $(shell swift build -c release $(BUILD_FLAGS) --show-bin-path)

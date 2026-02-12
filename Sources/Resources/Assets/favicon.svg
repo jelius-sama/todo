@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="64" height="64" fill="#0a0e14"/>
+  
+  <!-- Border glow -->
+  <rect x="2" y="2" width="60" height="60" fill="none" stroke="#2d3541" stroke-width="1"/>
+  
+  <!-- Terminal bracket -->
+  <path d="M 16 20 L 12 24 L 16 28" stroke="#00ff88" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  
+  <!-- Checkmark -->
+  <path d="M 24 32 L 30 38 L 44 24" stroke="#00ff88" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  
+  <!-- Terminal cursor/underscore -->
+  <rect x="48" y="36" width="8" height="3" fill="#00ddff" filter="url(#glow)"/>
+  
+  <!-- Scanline effect -->
+  <rect x="0" y="0" width="64" height="64" fill="url(#scanlines)" opacity="0.05"/>
+  
+  <defs>
+    <pattern id="scanlines" x="0" y="0" width="1" height="4" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="1" height="2" fill="black"/>
+      <rect x="0" y="2" width="1" height="2" fill="transparent"/>
+    </pattern>
+  </defs>
+</svg>

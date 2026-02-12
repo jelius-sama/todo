@@ -9,6 +9,7 @@ enum APIRouter {
     }
 
     static func registerRoutes() {
+        // BUG: This route crashes the server if it couldn't find the resource bundle.
         router.get("/") { _ in
             do {
                 guard

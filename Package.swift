@@ -30,6 +30,9 @@ targets.append(
         dependencies: dependencies,
         path: "Sources",
         resources: [
+            // TODO: The following doesn't embed the resources to the executable
+            //        We need to use some other method of embedding resources.
+            //        Maybe we could use golang for this purpose.
             .copy(notifierLibrary),
             .copy("Resources/Assets"),
         ],
